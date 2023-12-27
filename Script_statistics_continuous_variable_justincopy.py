@@ -87,18 +87,21 @@ def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, 
 
     for index, row in df_variables.iterrows():
 
-        print(f"starting {index} out of {len(df_variables)}")
+        print(f"starting {index} out of {len(df_variables)}", flush = True)
 
         variable = row[COLS_MAIN['VARNAME']]
-        print(variable)
+        print(variable, flush = True)
         if variable not in df_pheno.columns:
-            print("not in columns")
+            print("not in columns", flush = True)
             continue
         if variable in df_pheno_final.columns:
-            print("already in the final (duplicate)")
+            print("already in the final (duplicate)", flush = True)
             continue
         if (df_pheno.dtypes[variable] != 'float64' and df_pheno.dtypes[variable] != 'int64'):
-            print("needs to be a float or int")
+            print("needs to be a float or int", flush = True)
+            continue
+        if 'RX_MED' in variable:
+            print("RX_MED not relevant for GWAS", flush = True)
             continue
 
         unit = row[COLS_MAIN['UNITTYPE']]
@@ -113,7 +116,6 @@ def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, 
         if len(df_not_missing) == 0:
             continue
 
-        print(df_pheno_cut.RECODED.head())
         mean = np.nanmean(df_pheno_cut.RECODED)
         unique_values = len(df_not_missing.RECODED.unique())
         ## Records several assessement of Outliers
@@ -175,6 +177,8 @@ def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, 
             problem.append('[Statistics] Mode frequency')
         if unique_values < 30 :
             problem.append('[Statistics] N uniques values')
+
+        print(f"done {index} out of {len(df_variables)}", flush = True)
         yield {**{
                 '[Description] Variable' : variable, 
                 '[Description] Domain':  row[COLS_MAIN['DATABASE']],
@@ -320,7 +324,6 @@ if __name__ == '__main__':
     categorical_variables = set(filter_categorical_variables(df_pheno, variable_missing_codes))
 
     df_variables = pd.read_excel(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_MAIN'], header = 0)
-    print(df_variables.head())
 
     df_variables[COLS_MAIN['UNITTYPE']] = df_variables[COLS_MAIN['UNITTYPE']].fillna('')
 
@@ -335,8 +338,10 @@ if __name__ == '__main__':
     #need to make this more memory efficient
     
     #populate variables for final dataframe.
+    print("Starting filter_continous variables...", flush = True)
     df_variables_final = pd.DataFrame(filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, df_pheno_final))
 
+    print("Done filtering continuous variables", flush = True)
     df_variables_final.to_csv(f'{args.out_prefix}.summary.tsv', sep = '\t', header = True, index = False)
-    #df_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records')
+    df_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records')
     print("DONE!")
