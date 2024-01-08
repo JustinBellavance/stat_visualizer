@@ -1,9 +1,11 @@
 <!DOCTYPE html>
-
+<!--    errors to fix: unhiding hidden traits for all options (warnings and search),
+        make it so enter presses don't hurt crash the webpage -->
 <html>
 <head>
 <!--produced by Vincent Chapdelaine September 2023-->
 <!--updated by Justin Bellavance December 2023-->
+
 <!--External Dependencies: Importing Bootstrap CSS and JS libraries-->
 <link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" rel="stylesheet"/>
 <script crossorigin="anonymous" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" src="https://code.jquery.com/jquery-3.3.1.slim.min.js">
@@ -126,12 +128,12 @@
             </div>
         </div> <!-- end of checkboxes -->
 
-        <form id="search" class="search" hidden>
+        <form id="search" class="search" onSubmit="return false;" hidden>
             <label for="Search">Search:</label>
             <input type="text" id="Search" onkeyup="search()" placeholder="Enter a trait name">
         </form>
     </div>
-<!--Main container-->
+    <!--Main container-->
     <div class="main">
         <div id="jsonContainer"></div>
         <!--Save changes by downloading a version with filters-->
@@ -150,14 +152,21 @@
         console.log("removeNoWarningTraits pressed")
 
         for (let i = 0; i < traits.length; i++) {
-                //if it has a warning, toggle hidden.
-                hasWarning = traits[i].querySelector(".warnings") != null;
-                if (checkBox.checked && !(hasWarning)){
-                    traits[i].hidden = true;
-                } else { //unhide element we unchecked
-                    traits[i].hidden = false;
+            
+            // only proceed if the trait is not hidden by other functions (like remNoWarning, remWarnings, etc..)
+            if (traits[i].getAttribute("searchHidden") === "false" && traits[i].getAttribute("warningHidden") === "false"){
+
+                    //if it has a warning, toggle hidden.
+                    hasWarning = traits[i].querySelector(".warnings") != null;
+                    if (checkBox.checked && !(hasWarning)){
+                        traits[i].setAttribute("noWarningHidden", "true")
+                        traits[i].hidden = true;
+                    } else { //unhide element we unchecked
+                        traits[i].setAttribute("noWarningHidden", "false")
+                        traits[i].hidden = false;
+                    }
                 }
-            }
+        }
     }
 
     function removeWarningTraits(){
@@ -168,17 +177,25 @@
         console.log("removeWarningTraits pressed")
 
         for (let i = 0; i < traits.length; i++) {
+
+            // only proceed if the trait is not hidden by other functions (like remNoWarning, remWarnings, etc..)
+            if (traits[i].getAttribute("searchHidden") === "false" && traits[i].getAttribute("noWarningHidden") === "false"){
                 //if it has a warning, toggle hidden.
                 hasWarning = (traits[i].querySelector(".warnings") != null);
                 if (checkBox.checked && hasWarning){
+                    traits[i].setAttribute("warningHidden", "true")
                     traits[i].hidden = true;
                 } else { //unhide element we unchecked
+                    traits[i].setAttribute("warningHidden", "false")
                     traits[i].hidden = false;
                 }
             }
+        }
     }
-    
+
+    //give some sort of tag to see which kind of hidden it is: warning hidden or search hidden.
     function search() {
+        console.log("search activated")
         //onload, make a list of all innerText from children that are h1.headers
         //the goal will be to find instances in innerText (either code or description)
         var input, query, headers, title
@@ -191,24 +208,25 @@
         for (let i = 0; i < traits.length; i++) {
 
             // only proceed if the trait is not hidden by other functions (like remNoWarning, remWarnings, etc..)
-            if (!(traits[i].hidden)){
-                
-                //header will always be [0] (out of [0, 1, 2])
-                header = traits[i].children[0]
+            if (traits[i].getAttribute("warningHidden") === "false" && traits[i].getAttribute("noWarningHidden") === "false"){
 
                 //if the query (search bar) isn't empty
                 if (query != "" ){
+                    //header will always be [0] (out of [0, 1, 2])
+                    header = traits[i].children[0]
                     title = header.outerText.toUpperCase();
                     if (!(title.includes(query))){
-                        header.parentNode.hidden = true;
+                        traits[i].setAttribute("searchHidden", "true")
+                        traits[i].hidden = true;
                     } else if (title.includes(query)){
-                        header.parentNode.hidden = false;
+                        traits[i].setAttribute("searchHidden", "false")
+                        traits[i].hidden = false;
                     };
                 } else {
-                    header.parentNode.hidden = false;
+                    traits[i].setAttribute("searchHidden", "false")
+                    traits[i].hidden = false;
                 }
-            }
-
+            } 
         }
     }
 
@@ -253,7 +271,6 @@
             document.getElementById('search').hidden = false;
             document.getElementById('columns').hidden = false;
 
-
             var jsonData = JSON.parse(e.target.result);
             var jsonContainer = document.getElementById("jsonContainer");
             // Generate tables and images for each JSON object
@@ -265,6 +282,12 @@
                 headerKeys.splice(1, 0, "To exclude");
 
                 var child = document.createElement("div")
+
+                //set "hidden" attribute to false for search and warning
+                child.setAttribute("searchHidden", "false")
+                child.setAttribute("warningHidden", "false")
+                child.setAttribute("noWarningHidden", "false")
+
                 child.setAttribute("class", "trait-info")
 
                 //Create a header explaining phenotype
@@ -544,8 +567,12 @@
                 link.click();
             }
         };
+        if (file.name.split('.').pop() != "json"){
+            alert("File is not a json file.")
+        } else {
+            reader.readAsText(file); 
+        }
 
-        reader.readAsText(file);
     });
 
     document.body.appendChild(fileInput);
