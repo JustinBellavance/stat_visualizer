@@ -1,0 +1,51 @@
+# This is a template file of a TOML config file that will be used for the python script
+
+DICT_FILE = "" # path to dictionnary file (usually an .xlsx file)
+CODING_FILE = "" # can be the same as the dictionnary file
+PHENOTYPE_FILE = "" # path to the file with the phenotypes (usually a .csv or .tsv file)
+
+# Sheet names
+SHEET_NAME_MAIN = "" # name of the sheet which contains metadata about the traits.
+SHEET_NAME_CODES = "" # name of the sheet that contains the coded missing variables.
+
+
+# Information needed about columns in the PHENOTYPE_FILE
+[PHENOTYPE_COLS]
+IID = "" # ID column for samples, usually considered IIDs
+SEX_VAR = "" # column which represents the biological sex variable
+
+# How the males and females are coded in the phenotype file
+# Possibilities are usually 0 or 1, "M" or "F", "male" or "female", etc..
+FEMALE = "" 
+MALE = ""
+
+# column names for SHEET_NAME_MAIN
+[COLUMN_NAMES_MAIN]
+VARNAME = ""
+UNITTYPE = ""
+LABEL = ""
+DATABASE = "" #optional
+
+# column names for SHEET_NAME_CODES
+[COLUMN_NAMES_CODES]
+SURVEY = ""
+DOMAIN = "" #optional
+VARIABLE = ""
+CODE = ""
+CATEGORY = ""
+
+# Here you will declare phrases or sentences so that the script 
+# will properly identify missing codes (also known as variables)
+
+[MISSING]
+# A list of substrings that, when matched, will treat the code as a missing variable.
+# Capital letter sensitive
+MISSING_CATEGORIES_SUB = [
+
+]
+
+# A list of strings that will only consider a code a missing variable if it an exact match
+# Capital letter sensitive
+MISSING_CATEGORIES_EXACT = [
+
+]

@@ -1,0 +1,64 @@
+# This is a template file of a TOML config file that will be used for the python script
+
+DICT_FILE = "/home/justb11/projects/def-gsarah/justb11/QC/python_script/cartagene/COMBINED_CATALOG_v2_9_6_JUIL2020_0.xlsx" # path to dictionnary file (usually an .xlsx file)
+PHENOTYPE_FILE = "/home/justb11/projects/def-gsarah/justb11/QC/python_script/cartagene/gagliano_825196_data_2021_10_07_2_redo.csv" # path to the file with the phenotypes (usually a .csv file)
+
+# Sheet names
+SHEET_NAME_MAIN = "COMBINED_CATALOG" # name of the sheet which contains metadata about the traits.
+SHEET_NAME_CODES = "Categories" # name of the sheet that contains the coded missing variables.
+
+# Information needed about columns in the PHENOTYPE_FILE
+[PHENOTYPE_COLS]
+IID = "PROJECT_CODE" # ID column for samples, usually considered IIDs
+SEX_VAR = "SEX" #column which represents the biological sex variable
+
+# How the males and females are coded in the phenotype file
+# Possibilities are usually 0 or 1, "M" or "F", "male" or "female", etc..
+FEMALE = "WOMEN" 
+MALE = "MEN"
+
+# column names for SHEET_NAME_MAIN
+[COLUMN_NAMES_MAIN]
+VARNAME = "Varname"
+UNITTYPE = "Type "
+LABEL = "DOMAIN_ENGLISH"
+DATABASE = "database" #optional
+
+# column names for SHEET_NAME_CODES
+[COLUMN_NAMES_CODES]
+SURVEY = "SURVEY"
+DOMAIN = "DOMAIN"
+VARIABLE = "VARIABLE"
+CODE = "CODE"
+CATEGORY = "CATEGORY"
+
+# Here you will declare phrases or sentences so that the script 
+# will properly identify missing codes (also known as variables)
+
+[MISSING]
+# A list of substrings that, when matched, will treat the code as a missing variable.
+# Capital letter sensitive
+MISSING_CATEGORIES_SUB = []
+
+# A list of strings that will only consider a code a missing variable if it an exact match
+# Capital letter sensitive
+MISSING_CATEGORIES_EXACT = [
+    "MISSING",
+    "OTHER",
+    "Other",
+    "ALL",
+    "Not available",
+    "NO ANSWER",
+    "Missing answer",
+    "9",
+    "999",
+    "9999",
+    "-9",
+    "-7",
+    "9",
+    "-1",
+    "Not applicable",
+    "Missing",
+    "DON'T KNOW",
+    "PREFER NOT TO ANSWER"
+]
