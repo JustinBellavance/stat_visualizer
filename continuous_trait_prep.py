@@ -45,6 +45,23 @@ def filter_binary_variables(df, variable_missing_codes):
         yield label
     return
 
+#these filters use the dict_categories values, but it would be better if they used the unique values from the actual data
+#remove all the variables we want to ignore, if there's only 2 left, it is a binary variable
+def filter_binary_variables_2(df_pheno_column_names, variable_missing_codes):
+    for label in df_pheno_column_names:
+        df = pd.read_csv(TOML["PHENOTYPE_FILE"], usecols=[label], low_memory = True)
+        df_codes = df[label].values.tolist() #read in only that column
+        if (variable_missing_codes.get(label) != None):
+            df_only_codes = np.unique(list(map(lambda x: np.nan if x in variable_missing_codes.get(label) else x, df_codes)))
+        else:
+            df_only_codes = np.unique(df_codes)
+        df_only_codes = [x for x in df_only_codes if x == x]
+        if len(df_only_codes) != 2:
+            continue
+        yield label
+    return
+
+#not used anymore...
 #remove all the variables we want to ignore, if there's more than 2 left, it is a categorical (or quantitative) variable
 def filter_categorical_variables(df, variable_missing_codes):
     label_cols = df.columns.values.tolist()
@@ -87,21 +104,19 @@ def populate_missing_codes(df):
         missing.loc[len(missing.index)] = [name, codes] 
     return missing
 
-def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, df_pheno_final):
+def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno_column_names):
 
     for index, row in df_variables.iterrows():
 
-        print(f"starting {index} out of {len(df_variables)}", flush = True)
-
+        print(f"starting {index} out of {len(df_variables.index)}", flush = True)
         variable = row[COLS_MAIN['VARNAME']]
         print(variable, flush = True)
-        if variable not in df_pheno.columns:
+
+        df_pheno_cut = pd.read_csv(TOML['PHENOTYPE_FILE'], usecols=[COLS_PHENO['SEX_VAR'],variable], low_memory = True)
+        if variable not in df_pheno_column_names: #df_pheno.columns can be the list of names I generated before
             print("not in columns", flush = True)
             continue
-        if variable in df_pheno_final.columns:
-            print("already in the final (duplicate)", flush = True)
-            continue
-        if (df_pheno.dtypes[variable] != 'float64' and df_pheno.dtypes[variable] != 'int64'):
+        if (df_pheno_cut.dtypes[variable] != 'float64' and df_pheno_cut.dtypes[variable] != 'int64'):
             print("needs to be a float or int", flush = True)
             continue
         if 'RX_MED' in variable:
@@ -109,9 +124,16 @@ def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, 
             continue
 
         unit = row[COLS_MAIN['UNITTYPE']]
+        if ( COLS_MAIN['DATABASE'].strip() == "" ):
+            domain = COLS_MAIN['DATABASE']
+        else:
+            domain = row[COLS_MAIN['DATABASE']]
+
+        label = row[COLS_MAIN['LABEL']]
+
         missing_codes = variable_missing_codes.get(variable, set())
 
-        df_pheno_cut = df_pheno[[COLS_PHENO['SEX_VAR'], variable]].copy()
+        #df_pheno_cut = df_pheno[[COLS_PHENO['SEX_VAR'], variable]].copy() # here I could just read in the column with the csv column thing :)
         
         #Removes Known missing codes
         df_pheno_cut['RECODED'] = df_pheno_cut[variable].apply(lambda x: None if x in missing_codes else x )
@@ -185,8 +207,8 @@ def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, 
         print(f"done {index} out of {len(df_variables)}", flush = True)
         yield {**{
                 '[Description] Variable' : variable, 
-                '[Description] Domain':  row[COLS_MAIN['DATABASE']],
-                '[Description] Label' : row[COLS_MAIN['LABEL']],
+                '[Description] Domain':  domain,
+                '[Description] Label' : label ,
                 '[Samples] Total': n_total,
                 '[Samples] Males' : n_males,
                 '[Samples] Females' : n_females,
@@ -329,9 +351,10 @@ if __name__ == '__main__':
     # you can use numbers.
 
     #read in phenotypes
-    df_pheno = pd.read_csv(TOML['PHENOTYPE_FILE'], header = 0)
+    variable_names = pd.read_csv(TOML['PHENOTYPE_FILE'], index_col=0, nrows=0).columns.tolist()
 
-    binary_variables = set(filter_binary_variables(df_pheno, variable_missing_codes)) 
+    #binary_variables = set(filter_binary_variables(df_pheno, variable_missing_codes)) 
+    binary_variables_2 = set(filter_binary_variables_2(variable_names, variable_missing_codes))
     #categorical_variables = set(filter_categorical_variables(df_pheno, variable_missing_codes))
 
     trait_dict = pd.read_excel(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_MAIN'], header = 0)
@@ -341,13 +364,10 @@ if __name__ == '__main__':
     #remove binary (to keep only quantitative variables)
     trait_dict = trait_dict[~trait_dict[COLS_MAIN['VARNAME']].isin(binary_variables)]
     #trait_dict = trait_dict[~trait_dict[COLS_MAIN['VARNAME']].isin(categorical_variables)]
-    
-    #create final dataframe to help populate.
-    df_pheno_final = pd.DataFrame({'FID': df_pheno[COLS_PHENO['IID']], 'IID': df_pheno[COLS_PHENO['IID']]})
-    
+        
     #populate variables for final dataframe.
     print("Starting filter_continous variables...", flush = True)
-    continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, df_pheno, df_pheno_final))
+    continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, variable_names))
 
     print("Done filtering continuous variables", flush = True)
     continuous_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records')
