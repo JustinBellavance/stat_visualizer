@@ -16,10 +16,13 @@ argparser.add_argument('-t', '--outlier_threshold', metavar = 'value', dest = 'o
 
 args = argparser.parse_args()
 
-# 1. things to improve for ukbb - dict and coding in different files, do we need dict at all? can we just use column names from phenotype file
-# and then codings...
 
-# 2. speed.. ukbb has a long list of phenotypes.. there are very likely some optimizations to be made for speed (even memory usage)
+#TODO: remove --outlier threshold option
+# Work to increase speed and memory usage
+# Work to use data from ukbb
+# Create .gitignore to make easier
+# Pre-screen variables before going on to outliers?
+# maybe I can run it in batches to balance between time and space, batches of 100 phenotypes? 
 
 with open(args.config_file, mode="rb") as fp:
     TOML = tomllib.load(fp)
@@ -47,9 +50,13 @@ def filter_binary_variables(df, variable_missing_codes):
 
 #these filters use the dict_categories values, but it would be better if they used the unique values from the actual data
 #remove all the variables we want to ignore, if there's only 2 left, it is a binary variable
-def filter_binary_variables_2(df_pheno_column_names, variable_missing_codes):
-    for label in df_pheno_column_names:
-        df = pd.read_csv(TOML["PHENOTYPE_FILE"], usecols=[label], low_memory = True)
+def filter_binary_variables_2(variable_names, variable_missing_codes, contains_periods):
+    index = 0
+    for label in variable_names:
+        print(f"filtering variable {index} out of {len(variable_names)}", flush = True)
+        if contains_periods:
+            label = f"f.{label}.0.0" 
+        df = read_file(TOML["PHENOTYPE_FILE"], wanted_cols=[label])
         df_codes = df[label].values.tolist() #read in only that column
         if (variable_missing_codes.get(label) != None):
             df_only_codes = np.unique(list(map(lambda x: np.nan if x in variable_missing_codes.get(label) else x, df_codes)))
@@ -85,8 +92,11 @@ def populate_missing_codes(df):
        }
 
     missing = pd.DataFrame(dict)
-
+    index = 0
     for name in df[COLS_CODE['VARIABLE']].unique():
+        index += 1
+        print(f"populating missing variables of column {index} out out {len(df[COLS_CODE['VARIABLE']].unique())}", flush = True)
+
         subset = df[df[COLS_CODE['VARIABLE']] == name]
 
         terms_to_avoid = '|'.join(MISSING['MISSING_CATEGORIES_SUB'])
@@ -104,16 +114,19 @@ def populate_missing_codes(df):
         missing.loc[len(missing.index)] = [name, codes] 
     return missing
 
-def filter_continuous_variables(df_variables, variable_missing_codes, df_pheno_column_names):
+def filter_continuous_variables(df_variables, variable_missing_codes, variable_names, contains_periods):
 
     for index, row in df_variables.iterrows():
 
         print(f"starting {index} out of {len(df_variables.index)}", flush = True)
-        variable = row[COLS_MAIN['VARNAME']]
+        if contains_periods:
+            variable = f"f.{row[COLS_MAIN['VARNAME']]}.0.0"
+        else:
+            variable = row[COLS_MAIN['VARNAME']]
         print(variable, flush = True)
 
-        df_pheno_cut = pd.read_csv(TOML['PHENOTYPE_FILE'], usecols=[COLS_PHENO['SEX_VAR'],variable], low_memory = True)
-        if variable not in df_pheno_column_names: #df_pheno.columns can be the list of names I generated before
+        df_pheno_cut = read_file(TOML['PHENOTYPE_FILE'], wanted_cols =[COLS_PHENO['SEX_VAR'],variable])
+        if variable not in variable_names:
             print("not in columns", flush = True)
             continue
         if (df_pheno_cut.dtypes[variable] != 'float64' and df_pheno_cut.dtypes[variable] != 'int64'):
@@ -319,55 +332,118 @@ def plot(df,row,meaned,sd): # Creates three pannel displaying the phenotype dist
     f.savefig(f'images/{row[COLS_MAIN["VARNAME"]]}_distribution.png', dpi=300)
     plt.close(f)
 
+# will read the file properly automatically depending on the given format (either .xlsx, .csv or .tsv) using pandas
+def read_file(file_name, wanted_cols = None, only_header = False, sheet_name = None): 
+    file_extension = os.path.splitext(file_name)[1]
+
+    if file_extension == ".csv":
+        if wanted_cols != None:
+            return( pd.read_csv(file_name, header = 0, usecols=wanted_cols, low_memory = True))
+        else: 
+            if (only_header):
+                return (pd.read_csv(file_name, index_col=0, nrows=0, low_memory = True).columns.tolist())
+            else:
+                return( pd.read_csv(file_name, header = 0, low_memory = True))
+    elif file_extension == ".tsv" or file_extension == ".tab":
+        if wanted_cols != None:
+            return( pd.read_csv(file_name, header = 0, usecols=wanted_cols, low_memory = True, sep='\t'))
+        else: 
+            if (only_header):
+                return (pd.read_csv(file_name, index_col=0, nrows=0, low_memory = True, sep='\t').columns.tolist())
+            else:
+                return( pd.read_csv(file_name, header = 0, low_memory = True, sep='\t'))
+    elif ".xlsx":
+        return(pd.read_excel(file_name, sheet_name = sheet_name, header = 0))
+    
+    return None
+
+#because ukb phenotype file is formatted as f.<fieldID>.<visit#>.<repeatedmeasurement#> 
+#We need to change them to only get the <fieldID> or else it won't correspond the with dictionnary.
+#this script won't affect any other phenotype files because they don't have periods in the header.
+def clean_ukb_format(headers):
+
+    contains_periods = "." in headers[0]
+    #if the variable names contain periods (like with ukb format) take the variable of interest
+    if (contains_periods):
+        headers_cleaned = [header.split(".")[1]for header in headers if "." in header]
+    else:
+        headers_cleaned = headers
+
+    # remove repetitive var names
+    headers_cleaned = headers_cleaned.unique()
+    return headers_cleaned, contains_periods
+
 if __name__ == '__main__':
 
-    #read in the codes
-    codes = pd.read_excel(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_CODES'])
+    #if theres's seperate coding file (such as with ukb), read on only that full file
+    print("Reading code files", flush = True)
+    if TOML['CODING_FILE'] != "":
+        codes = read_file(TOML['CODING_FILE'])
+    else:
+        codes = read_file(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_CODES'])
 
+
+    #remove columsn that might be empty or missing a header
+    print("removing missing values in code columns")
     subset_values = []
     for value in COLS_CODE:
         if (COLS_CODE[value] != ""):
             subset_values.append(COLS_CODE[value])
 
     codes = codes[subset_values]
+
+    #TODO:
+    # this would be a great time to deal with ukbb trait formatting issues from convert header to proper format maybe?
+    # difference between sarah data and test data headers, deal with them both the same way.
+    #read in phenotypes    
+    print("Reading in phenotype header", flush = True)
+    variable_names = read_file(TOML['PHENOTYPE_FILE'], only_header = True)
+    print(variable_names, flush = True)
+    variable_names, contains_periods = clean_ukb_format(variable_names)
+    print(variable_names, flush = True)
+
+    #make sure all the code labels that we will be using are strings.
+    print("Converting code labels to string", flush = True)
     codes[COLS_CODE['CATEGORY']] = codes[COLS_CODE['CATEGORY']].astype("string")
+    print(codes[COLS_CODE['CATEGORY']].head(), flush = True)
 
     #run function to create dataframe in needed format. E.g.:
     #   varname Missing codes
     # 0 ACUTE_RENAL_FAIL_ONSET_AGE  -9, -7, 77, 88, 99
     # 1 ADDICTION_DISORDER_ONSET_AGE    -9, -7, 77, 88, 99 
+    print("Populating missing codes... ", flush = True)
     df_missing_codes = populate_missing_codes(codes)
+    print("Populating missing codes... Done.", flush = True)
 
     #remove empty missing codes (as they might appear in code files)
     df_missing_codes = df_missing_codes[df_missing_codes.iloc[:,1] != ""]
+    df_missing_codes.to_csv(f'{args.out_prefix}.missing_codes.csv')
     
     #remove all non digits, make all digits floats.
     #this will make a json that has all the missing codes for a given variable
     variable_missing_codes = {row['varname']: set(None if re.search('[^0-9]+', x) else float(x) for x in row['Missing codes'].split(',')) for index, row in df_missing_codes.iterrows()}
 
-    #TODO: 
-    #is there a way to read in one colomn (trait) at a time?
-    #df = pd.read_csv('data.csv', usecols=['star_name','ra'], low_memory = True) ??
-    # you can use numbers.
-
-    #read in phenotypes
-    variable_names = pd.read_csv(TOML['PHENOTYPE_FILE'], index_col=0, nrows=0).columns.tolist()
-
     #binary_variables = set(filter_binary_variables(df_pheno, variable_missing_codes)) 
-    binary_variables_2 = set(filter_binary_variables_2(variable_names, variable_missing_codes))
+    print("binary variable filtering ...", flush = True)
+    binary_variables_2 = set(filter_binary_variables_2(variable_names, variable_missing_codes, contains_periods))
+    print("binary variable filtering ... done", flush = True)
     #categorical_variables = set(filter_categorical_variables(df_pheno, variable_missing_codes))
 
-    trait_dict = pd.read_excel(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_MAIN'], header = 0)
+    trait_dict = read_file(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_MAIN'])
 
     trait_dict[COLS_MAIN['UNITTYPE']] = trait_dict[COLS_MAIN['UNITTYPE']].fillna('') #if there is a missing space, treat as NA
 
     #remove binary (to keep only quantitative variables)
-    trait_dict = trait_dict[~trait_dict[COLS_MAIN['VARNAME']].isin(binary_variables)]
+    trait_dict = trait_dict[~trait_dict[COLS_MAIN['VARNAME']].isin(binary_variables_2)]
     #trait_dict = trait_dict[~trait_dict[COLS_MAIN['VARNAME']].isin(categorical_variables)]
         
     #populate variables for final dataframe.
     print("Starting filter_continous variables...", flush = True)
-    continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, variable_names))
+    #is there a way to write this line by line as a file, and do the .to_json in more memory efficient way on the command line or something? (probably)
+    # continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods)) 
+    # print("Done filtering continuous variables, saving to JSON..", flush = True)
 
-    print("Done filtering continuous variables", flush = True)
-    continuous_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records')
+    filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods).to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
+
+    # continuous_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
+    print("script done!")

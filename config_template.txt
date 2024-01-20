@@ -1,6 +1,6 @@
 # This is a template file of a TOML config file that will be used for the python script
 
-DICT_FILE = "" # path to dictionnary file (usually an .xlsx file)
+DICT_FILE = "" # path to dictionnary file (usually an .xlsx or .csv file)
 CODING_FILE = "" # can be the same as the dictionnary file
 PHENOTYPE_FILE = "" # path to the file with the phenotypes (usually a .csv or .tsv file)
 
@@ -28,7 +28,6 @@ DATABASE = "" #optional
 
 # column names for SHEET_NAME_CODES
 [COLUMN_NAMES_CODES]
-SURVEY = ""
 DOMAIN = "" #optional
 VARIABLE = ""
 CODE = ""
