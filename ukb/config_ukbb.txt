@@ -8,7 +8,6 @@ PHENOTYPE_FILE = "/home/justb11/projects/def-gsarah/justb11/trait_filtering/test
 SHEET_NAME_MAIN = "" # name of the sheet which contains metadata about the traits. Optional if dict is csv
 SHEET_NAME_CODES = "" # name of the sheet that contains the coded missing variables. Optional if dict or coding file is csv
 
-
 # Information needed about columns in the PHENOTYPE_FILE
 [PHENOTYPE_COLS]
 IID = "" # ID column for samples, usually considered IIDs
@@ -29,8 +28,8 @@ DATABASE = "" #optional
 # column names for SHEET_NAME_CODES or CODING_FILE if the latter is a csv / tsv
 [COLUMN_NAMES_CODES]
 DOMAIN = "" #optional
-VARIABLE = "Value"
-CODE = "Coding"
+VARIABLE = "Coding"
+CODE = "Value"
 CATEGORY = "Meaning"
 
 # Here you will declare phrases or sentences so that the script 

@@ -53,6 +53,7 @@ def filter_binary_variables(df, variable_missing_codes):
 def filter_binary_variables_2(variable_names, variable_missing_codes, contains_periods):
     index = 0
     for label in variable_names:
+        index += 1
         print(f"filtering variable {index} out of {len(variable_names)}", flush = True)
         if contains_periods:
             label = f"f.{label}.0.0" 
@@ -333,7 +334,7 @@ def plot(df,row,meaned,sd): # Creates three pannel displaying the phenotype dist
     plt.close(f)
 
 # will read the file properly automatically depending on the given format (either .xlsx, .csv or .tsv) using pandas
-def read_file(file_name, wanted_cols = None, only_header = False, sheet_name = None): 
+def read_file(file_name, wanted_cols = None, only_header = False, sheet = None): 
     file_extension = os.path.splitext(file_name)[1]
 
     if file_extension == ".csv":
@@ -353,7 +354,7 @@ def read_file(file_name, wanted_cols = None, only_header = False, sheet_name = N
             else:
                 return( pd.read_csv(file_name, header = 0, low_memory = True, sep='\t'))
     elif ".xlsx":
-        return(pd.read_excel(file_name, sheet_name = sheet_name, header = 0))
+        return(pd.DataFrame.from_dict(pd.read_excel(file_name, sheet_name = sheet, header = 0)))
     
     return None
 
@@ -365,12 +366,15 @@ def clean_ukb_format(headers):
     contains_periods = "." in headers[0]
     #if the variable names contain periods (like with ukb format) take the variable of interest
     if (contains_periods):
-        headers_cleaned = [header.split(".")[1]for header in headers if "." in header]
+        headers_list = []
+        for header in headers:
+            if header.split(".")[2] == "0" and header.split(".")[3] == "0":
+                headers_list.append(header.split(".")[1])
+        headers_cleaned = set(headers_list)
     else:
-        headers_cleaned = headers
+        headers_cleaned = set(headers)
 
     # remove repetitive var names
-    headers_cleaned = headers_cleaned.unique()
     return headers_cleaned, contains_periods
 
 if __name__ == '__main__':
@@ -380,8 +384,7 @@ if __name__ == '__main__':
     if TOML['CODING_FILE'] != "":
         codes = read_file(TOML['CODING_FILE'])
     else:
-        codes = read_file(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_CODES'])
-
+        codes = read_file(TOML['DICT_FILE'], sheet = TOML['SHEET_NAME_CODES'])
 
     #remove columsn that might be empty or missing a header
     print("removing missing values in code columns")
@@ -390,11 +393,9 @@ if __name__ == '__main__':
         if (COLS_CODE[value] != ""):
             subset_values.append(COLS_CODE[value])
 
+    print(TOML['SHEET_NAME_CODES'])
     codes = codes[subset_values]
 
-    #TODO:
-    # this would be a great time to deal with ukbb trait formatting issues from convert header to proper format maybe?
-    # difference between sarah data and test data headers, deal with them both the same way.
     #read in phenotypes    
     print("Reading in phenotype header", flush = True)
     variable_names = read_file(TOML['PHENOTYPE_FILE'], only_header = True)
@@ -416,6 +417,7 @@ if __name__ == '__main__':
     print("Populating missing codes... Done.", flush = True)
 
     #remove empty missing codes (as they might appear in code files)
+    print(df_missing_codes)
     df_missing_codes = df_missing_codes[df_missing_codes.iloc[:,1] != ""]
     df_missing_codes.to_csv(f'{args.out_prefix}.missing_codes.csv')
     
@@ -429,7 +431,7 @@ if __name__ == '__main__':
     print("binary variable filtering ... done", flush = True)
     #categorical_variables = set(filter_categorical_variables(df_pheno, variable_missing_codes))
 
-    trait_dict = read_file(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_MAIN'])
+    trait_dict = read_file(TOML['DICT_FILE'], sheet = TOML['SHEET_NAME_MAIN'])
 
     trait_dict[COLS_MAIN['UNITTYPE']] = trait_dict[COLS_MAIN['UNITTYPE']].fillna('') #if there is a missing space, treat as NA
 
@@ -440,10 +442,10 @@ if __name__ == '__main__':
     #populate variables for final dataframe.
     print("Starting filter_continous variables...", flush = True)
     #is there a way to write this line by line as a file, and do the .to_json in more memory efficient way on the command line or something? (probably)
-    # continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods)) 
-    # print("Done filtering continuous variables, saving to JSON..", flush = True)
+    continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods)) 
+    print("Done filtering continuous variables, saving to JSON..", flush = True)
 
-    filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods).to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
+    # filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods).to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
 
-    # continuous_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
+    continuous_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
     print("script done!")
