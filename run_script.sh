@@ -8,4 +8,4 @@
 
 module load StdEnv/2020 python/3.11.5
 #source myenv/bin/activate
-python3 tests.py
+python3 run_multiple_files.py
