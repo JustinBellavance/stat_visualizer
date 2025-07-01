@@ -1,7 +1,9 @@
-# Repository for Visualization Tool of Quantitative and Semi-Quantitative Traits of Large Cohorts
-## December 2023
+# Repository for files involved in continuous trait filtering in the CLSA for CLSA-PheWeb.
+### Last modified December 2023
+### Cleaned up for publication July 2025
 
 ## Contains: 
-- Filtering_tool -> html and javascript page to load trait statistics and visualizations
-- Script_statistics_continuous -> Creates tsv object and pngs to feed into visualizer
-- tests.py & run_script.sh -> Testing scripts (to be removed)
+- show_distributions.html -> html and javascript page to load trait statistics and visualizations
+- generate_distributions.py -> Creates tsv and pngs to feed into visualizer html
+- run_script.sh, run_multiple_files.py -> Scripts to run files with SLURM
+- CLSA/config_clsa.txt -> Config used for running script with CLSA data.
