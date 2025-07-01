@@ -7,3 +7,5 @@
 - generate_distributions.py -> Creates tsv and pngs to feed into visualizer html
 - run_script.sh, run_multiple_files.py -> Scripts to run files with SLURM
 - CLSA/config_clsa.txt -> Config used for running script with CLSA data.
+
+### Thank you to Vincent Chapdelaine for allowing us to modify his work for the CLSA.
