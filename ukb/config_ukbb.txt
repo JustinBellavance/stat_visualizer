@@ -1,8 +1,8 @@
 # This is a template file of a TOML config file that will be used for the python script
 
-DICT_FILE = "/home/justb11/projects/def-gsarah/justb11/trait_filtering/testing/ukb/Data_Dictionary_Showcase.csv" # path to dictionnary file (usually an .xlsx or .csv file)
-CODING_FILE = "/home/justb11/projects/def-gsarah/justb11/trait_filtering/testing/ukb/Codings.csv" # can be the same as the dictionnary file
-PHENOTYPE_FILE = "/home/justb11/projects/def-gsarah/justb11/trait_filtering/testing/ukb/real_data/ukb44409.tab" # path to the file with the phenotypes (usually a .csv or .tsv file)
+DICT_FILE = "/home/justb11/projects/def-gsarah/justb11/stat_visualizer/ukb/Data_Dictionary_Showcase.csv" # path to dictionnary file (usually an .xlsx or .csv file)
+CODING_FILE = "/home/justb11/projects/def-gsarah/justb11/stat_visualizer/ukb/Codings.csv" # can be the same as the dictionnary file
+PHENOTYPE_FILE = "/home/justb11/projects/def-gsarah/justb11/stat_visualizer/ukb/real_data/ukb44409.tab" # path to the file with the phenotypes (usually a .csv or .tsv file)
 
 # Sheet names
 SHEET_NAME_MAIN = "" # name of the sheet which contains metadata about the traits. Optional if dict is csv

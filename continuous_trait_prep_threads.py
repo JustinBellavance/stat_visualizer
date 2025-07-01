@@ -8,6 +8,11 @@ import seaborn as sns
 import statsmodels.api as sm
 import os
 import re
+import logging
+from time import time, strftime, sleep, gmtime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import islice
+from random import randint
 
 argparser = argparse.ArgumentParser(description = 'Prepares summary stats about continuous phenotypes using a given csv file and a dictionarry.')
 argparser.add_argument('-c', '--config', metavar = 'name', dest = 'config_file', type = str, required = True, help = "Config file in TOML format containing file location, sheet name and relevant column names. \n     For more information, see README")
@@ -15,13 +20,6 @@ argparser.add_argument('-o', '--output', metavar = 'name', dest = 'out_prefix', 
 argparser.add_argument('-t', '--threads', metavar = 'value', dest = 'threads', type = int, default=1, help = 'Number of threads used in computation (default 1)')
 
 args = argparser.parse_args()
-
-
-#TODO: 
-# Work to increase speed and memory usage
-# Work to use data from ukbb
-# Create .gitignore to make easier
-# maybe I can run it in batches to balance between time and space, batches of 100 phenotypes? 
 
 with open(args.config_file, mode="rb") as fp:
     TOML = tomllib.load(fp)
@@ -31,8 +29,19 @@ COLS_MAIN   = TOML['COLUMN_NAMES_MAIN']
 COLS_PHENO  = TOML['PHENOTYPE_COLS']
 MISSING     = TOML['MISSING']
 
-#these filters use the dict_categories values, but it would be better if they used the unique values from the actual data
-#remove all the variables we want to ignore, if there's only 2 left, it is a binary variable
+def chunked_iterable(iterable, chunk_size):
+    it = iter(iterable)
+    while True:
+        chunk = tuple(islice(it, chunk_size))
+        if not chunk:
+            break
+        yield chunk
+
+def thread_function(index):
+    # this is where all the operations would go
+    col = pd.read_csv(TOML["PHENOTYPE_FILE"], usecols=[index], header = 0, low_memory = True) # get the column of index "name"
+    return col
+
 def filter_binary_variables(df, variable_missing_codes):
     label_cols = df.columns.values.tolist()
     for label in label_cols:
@@ -114,133 +123,133 @@ def populate_missing_codes(df):
         missing.loc[len(missing.index)] = [name, codes] 
     return missing
 
-def filter_continuous_variables(df_variables, variable_missing_codes, variable_names, contains_periods):
+def filter_continuous_variables(index, df_variables, variable_missing_codes, variable_names, contains_periods):
 
-    for index, row in df_variables.iterrows():
+    row = df_variables.iloc[index]
 
-        print(f"starting {index} out of {len(df_variables.index)}", flush = True)
-        if contains_periods:
-            variable = f"f.{row[COLS_MAIN['VARNAME']]}.0.0"
-        else:
-            variable = row[COLS_MAIN['VARNAME']]
-        print(variable, flush = True)
+    print(f"starting {index} out of {len(df_variables.index)}", flush = True)
+    if contains_periods:
+        variable = f"f.{row[COLS_MAIN['VARNAME']]}.0.0"
+    else:
+        variable = row[COLS_MAIN['VARNAME']]
+    print(variable, flush = True)
 
-        df_pheno_cut = read_file(TOML['PHENOTYPE_FILE'], wanted_cols =[COLS_PHENO['SEX_VAR'],variable])
-        if variable not in variable_names:
-            print("not in columns", flush = True)
-            continue
-        if (df_pheno_cut.dtypes[variable] != 'float64' and df_pheno_cut.dtypes[variable] != 'int64'):
-            print("needs to be a float or int", flush = True)
-            continue
-        if 'RX_MED' in variable:
-            print("RX_MED not relevant for GWAS", flush = True)
-            continue
+    df_pheno_cut = read_file(TOML['PHENOTYPE_FILE'], wanted_cols =[COLS_PHENO['SEX_VAR'],variable])
+    if variable not in variable_names:
+        print("not in columns", flush = True)
+        return 1
+    if (df_pheno_cut.dtypes[variable] != 'float64' and df_pheno_cut.dtypes[variable] != 'int64'):
+        print("needs to be a float or int", flush = True)
+        return 1
+    if 'RX_MED' in variable:
+        print("RX_MED not relevant for GWAS", flush = True)
+        return 1
 
-        unit = row[COLS_MAIN['UNITTYPE']]
-        if ( COLS_MAIN['DATABASE'].strip() == "" ):
-            domain = COLS_MAIN['DATABASE']
-        else:
-            domain = row[COLS_MAIN['DATABASE']]
+    unit = row[COLS_MAIN['UNITTYPE']]
+    if ( COLS_MAIN['DATABASE'].strip() == "" ):
+        domain = COLS_MAIN['DATABASE']
+    else:
+        domain = row[COLS_MAIN['DATABASE']]
 
-        label = row[COLS_MAIN['LABEL']]
+    label = row[COLS_MAIN['LABEL']]
 
-        missing_codes = variable_missing_codes.get(variable, set())
+    missing_codes = variable_missing_codes.get(variable, set())
 
-        #df_pheno_cut = df_pheno[[COLS_PHENO['SEX_VAR'], variable]].copy() # here I could just read in the column with the csv column thing :)
-        
-        #Removes Known missing codes
-        df_pheno_cut['RECODED'] = df_pheno_cut[variable].apply(lambda x: None if x in missing_codes else x )
+    #df_pheno_cut = df_pheno[[COLS_PHENO['SEX_VAR'], variable]].copy() # here I could just read in the column with the csv column thing :)
+    
+    #Removes Known missing codes
+    df_pheno_cut['RECODED'] = df_pheno_cut[variable].apply(lambda x: None if x in missing_codes else x )
 
-        df_not_missing = df_pheno_cut[~df_pheno_cut.RECODED.isna()]
-        if len(df_not_missing) == 0:
-            continue
+    df_not_missing = df_pheno_cut[~df_pheno_cut.RECODED.isna()]
+    if len(df_not_missing) == 0:
+        return 1
 
-        mean = np.nanmean(df_pheno_cut.RECODED)
-        unique_values = len(df_not_missing.RECODED.unique())
-        ## Records several assessement of Outliers
-        sd_details={}
-        sd=np.nanstd(df_pheno_cut.RECODED)
+    mean = np.nanmean(df_pheno_cut.RECODED)
+    unique_values = len(df_not_missing.RECODED.unique())
+    ## Records several assessement of Outliers
+    sd_details={}
+    sd=np.nanstd(df_pheno_cut.RECODED)
 
-        if sd != 0 :
-            for i in range(2,int(5)+1):
-                sd_details['[Outliers] Number of values below mean -'+str(i)+' SD'] = len(df_not_missing.RECODED[df_not_missing.RECODED < (mean-i*sd)])
-                sd_details['[Outliers] Number of values above mean +'+str(i)+' SD'] = len(df_not_missing.RECODED[df_not_missing.RECODED > (mean+i*sd)])
-                if sd_details['[Outliers] Number of values below mean -'+str(i)+' SD'] !=0 :
-                    sd_details['[Outliers] Maximum value below mean -'+str(i)+' SD'] = max(df_not_missing.RECODED[df_not_missing.RECODED < (mean-i*sd)])
-                else :
-                    sd_details['[Outliers] Maximum value below mean -'+str(i)+' SD'] = 'NA'
-                if sd_details['[Outliers] Number of values above mean +'+str(i)+' SD'] !=0 :
-                    sd_details['[Outliers] Minimal value above mean +'+str(i)+' SD'] = min(df_not_missing.RECODED[df_not_missing.RECODED > (mean+i*sd)])
-                else :
-                    sd_details['[Outliers] Minimal value above mean +'+str(i)+' SD'] = 'NA'
-            min_value = df_not_missing.RECODED.min()
-            max_value = df_not_missing.RECODED.max()
-            PERC_5,PERC95 = np.percentile(df_not_missing.RECODED , [5,95])
-            S=skew(df_not_missing.RECODED, axis=0, bias=True)
-        else :
-            ## if SD=0 only one value is present therefor these value are irrelevant
-            PERC_5='NA'
-            PERC95='NA'
-            S='NA'
-
-        #If the males females are string (such as "M", "F" or "male", "female") we need to recode them to binary.
-        # do this before!! not at each loop
-        if (isinstance(COLS_PHENO['MALE'], str)): 
-            df_not_missing.loc[:,COLS_PHENO['SEX_VAR']] = df_not_missing.loc[:,COLS_PHENO['SEX_VAR']].replace(COLS_PHENO['MALE'], 0)
-        if (isinstance(COLS_PHENO['FEMALE'], str)): 
-            df_not_missing.loc[:,COLS_PHENO['SEX_VAR']] = df_not_missing.loc[:,COLS_PHENO['SEX_VAR']].replace(COLS_PHENO['FEMALE'], 1)
-
-        plot(df_not_missing, row, mean, sd) 
-
-        # Several Statistics
+    if sd != 0 :
+        for i in range(2,int(5)+1):
+            sd_details['[Outliers] Number of values below mean -'+str(i)+' SD'] = len(df_not_missing.RECODED[df_not_missing.RECODED < (mean-i*sd)])
+            sd_details['[Outliers] Number of values above mean +'+str(i)+' SD'] = len(df_not_missing.RECODED[df_not_missing.RECODED > (mean+i*sd)])
+            if sd_details['[Outliers] Number of values below mean -'+str(i)+' SD'] !=0 :
+                sd_details['[Outliers] Maximum value below mean -'+str(i)+' SD'] = max(df_not_missing.RECODED[df_not_missing.RECODED < (mean-i*sd)])
+            else :
+                sd_details['[Outliers] Maximum value below mean -'+str(i)+' SD'] = 'NA'
+            if sd_details['[Outliers] Number of values above mean +'+str(i)+' SD'] !=0 :
+                sd_details['[Outliers] Minimal value above mean +'+str(i)+' SD'] = min(df_not_missing.RECODED[df_not_missing.RECODED > (mean+i*sd)])
+            else :
+                sd_details['[Outliers] Minimal value above mean +'+str(i)+' SD'] = 'NA'
         min_value = df_not_missing.RECODED.min()
         max_value = df_not_missing.RECODED.max()
-        df_males = df_not_missing[df_not_missing[COLS_PHENO['SEX_VAR']] == 0]
-        df_females = df_not_missing[df_not_missing[COLS_PHENO['SEX_VAR']] == 1]
-        mean_value = df_not_missing.RECODED.mean()
-        median_value = df_not_missing.RECODED.median()
-        value_counts = df_not_missing.RECODED.value_counts()
-        mode_freq = value_counts.values[0]
-        mode_value = value_counts.index[0]
-        n_total = len(df_not_missing)
-        n_males = len(df_males)
-        n_females = len(df_females)
-        problem=[] ## Provides flags
-        if n_total < 100 :
-            problem.append('Total')
-        if n_males == 0 :
-            problem.append('Males')
-        if n_females ==0 :
-            problem.append('Females')
-        if mode_freq / n_total > 0.10 : #if mode is more than 10% of values, flag problem.
-            problem.append('[Statistics] Mode frequency')
-        if unique_values < 30 :
-            problem.append('[Statistics] N uniques values')
+        PERC_5,PERC95 = np.percentile(df_not_missing.RECODED , [5,95])
+        S=skew(df_not_missing.RECODED, axis=0, bias=True)
+    else :
+        ## if SD=0 only one value is present therefor these value are irrelevant
+        PERC_5='NA'
+        PERC95='NA'
+        S='NA'
 
-        print(f"done {index} out of {len(df_variables)}", flush = True)
-        yield {**{
-                '[Description] Variable' : variable, 
-                '[Description] Domain':  domain,
-                '[Description] Label' : label ,
-                '[Samples] Total': n_total,
-                '[Samples] Males' : n_males,
-                '[Samples] Females' : n_females,
-                '[Statistics] Minimum': min_value,
-                '[Statistics] Maximum' : max_value, 
-                '[Statistics] N uniques values': unique_values,
-                '[Statistics] PERC_5' : PERC_5,
-                '[Statistics] median' : median_value,
-                '[Statistics] PERC_95' : PERC95,
-                '[Statistics] Mean': mean_value,
-                '[Statistics] Mode': mode_value,
-                '[Statistics] Mode frequency': mode_freq,
-                '[Hidden] Skewness': S,
-                '[Statistics] SD' : sd,
-                '[Hidden] problem' : problem 
-            },** sd_details,**{
-                '[Description] Unit': unit,
-                '[Description] Missing code' : '|'.join([str(i) for i in missing_codes])
-            }}
+    #If the males females are string (such as "M", "F" or "male", "female") we need to recode them to binary.
+    # do this before!! not at each loop
+    if (isinstance(COLS_PHENO['MALE'], str)): 
+        df_not_missing.loc[:,COLS_PHENO['SEX_VAR']] = df_not_missing.loc[:,COLS_PHENO['SEX_VAR']].replace(COLS_PHENO['MALE'], 0)
+    if (isinstance(COLS_PHENO['FEMALE'], str)): 
+        df_not_missing.loc[:,COLS_PHENO['SEX_VAR']] = df_not_missing.loc[:,COLS_PHENO['SEX_VAR']].replace(COLS_PHENO['FEMALE'], 1)
+
+    plot(df_not_missing, row, mean, sd) 
+
+    # Several Statistics
+    min_value = df_not_missing.RECODED.min()
+    max_value = df_not_missing.RECODED.max()
+    df_males = df_not_missing[df_not_missing[COLS_PHENO['SEX_VAR']] == 0]
+    df_females = df_not_missing[df_not_missing[COLS_PHENO['SEX_VAR']] == 1]
+    mean_value = df_not_missing.RECODED.mean()
+    median_value = df_not_missing.RECODED.median()
+    value_counts = df_not_missing.RECODED.value_counts()
+    mode_freq = value_counts.values[0]
+    mode_value = value_counts.index[0]
+    n_total = len(df_not_missing)
+    n_males = len(df_males)
+    n_females = len(df_females)
+    problem=[] ## Provides flags
+    if n_total < 100 :
+        problem.append('Total')
+    if n_males == 0 :
+        problem.append('Males')
+    if n_females ==0 :
+        problem.append('Females')
+    if mode_freq / n_total > 0.10 : #if mode is more than 10% of values, flag problem.
+        problem.append('[Statistics] Mode frequency')
+    if unique_values < 30 :
+        problem.append('[Statistics] N uniques values')
+
+    print(f"done {index} out of {len(df_variables)}", flush = True)
+    return {**{
+            '[Description] Variable' : variable, 
+            '[Description] Domain':  domain,
+            '[Description] Label' : label ,
+            '[Samples] Total': n_total,
+            '[Samples] Males' : n_males,
+            '[Samples] Females' : n_females,
+            '[Statistics] Minimum': min_value,
+            '[Statistics] Maximum' : max_value, 
+            '[Statistics] N uniques values': unique_values,
+            '[Statistics] PERC_5' : PERC_5,
+            '[Statistics] median' : median_value,
+            '[Statistics] PERC_95' : PERC95,
+            '[Statistics] Mean': mean_value,
+            '[Statistics] Mode': mode_value,
+            '[Statistics] Mode frequency': mode_freq,
+            '[Hidden] Skewness': S,
+            '[Statistics] SD' : sd,
+            '[Hidden] problem' : problem 
+        },** sd_details,**{
+            '[Description] Unit': unit,
+            '[Description] Missing code' : '|'.join([str(i) for i in missing_codes])
+        }}
 
 def rint(listed): # Rank Inverse Normal Transformation
     c=3/8
@@ -376,7 +385,8 @@ def clean_ukb_format(headers):
     # remove repetitive var names
     return headers_cleaned, contains_periods
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    startTime = time()
 
     #if theres's seperate coding file (such as with ukb), read on only that full file
     print("Reading code files", flush = True)
@@ -385,7 +395,7 @@ if __name__ == '__main__':
     else:
         codes = read_file(TOML['DICT_FILE'], sheet = TOML['SHEET_NAME_CODES'])
 
-    #remove columsn that might be empty or missing a header
+        #remove columsn that might be empty or missing a header
     print("removing missing values in code columns")
     subset_values = []
     for value in COLS_CODE:
@@ -402,12 +412,20 @@ if __name__ == '__main__':
     variable_names, contains_periods = clean_ukb_format(variable_names)
     print(variable_names, flush = True)
 
+
+    # --------------------------------------------------
+
+    range_size = len(variable_names) # size of number of columns
+    chunk_size = args.threads # number of threads
+
+    print(f"col length {range_size + 1}, num threads = {chunk_size}", flush = True)
+
     #make sure all the code labels that we will be using are strings.
     print("Converting code labels to string", flush = True)
     codes[COLS_CODE['CATEGORY']] = codes[COLS_CODE['CATEGORY']].astype("string")
     print(codes[COLS_CODE['CATEGORY']].head(), flush = True)
 
-    #run function to create dataframe in needed format. E.g.:
+        #run function to create dataframe in needed format. E.g.:
     #   varname Missing codes
     # 0 ACUTE_RENAL_FAIL_ONSET_AGE  -9, -7, 77, 88, 99
     # 1 ADDICTION_DISORDER_ONSET_AGE    -9, -7, 77, 88, 99 
@@ -420,7 +438,7 @@ if __name__ == '__main__':
     df_missing_codes = df_missing_codes[df_missing_codes.iloc[:,1] != ""]
     df_missing_codes.to_csv(f'{args.out_prefix}.missing_codes.csv')
 
-    # if you want to save time, you can read missing codes through this
+        # if you want to save time, you can read missing codes through this
     # df_missing_codes = pd.read_csv(f'{args.out_prefix}.missing_codes.csv')
     
     #remove all non digits, make all digits floats.
@@ -440,14 +458,40 @@ if __name__ == '__main__':
     #remove binary (to keep only quantitative variables)
     trait_dict = trait_dict[~trait_dict[COLS_MAIN['VARNAME']].isin(binary_variables_2)]
     #trait_dict = trait_dict[~trait_dict[COLS_MAIN['VARNAME']].isin(categorical_variables)]
-        
+
     #populate variables for final dataframe.
-    print("Starting filter_continous variables...", flush = True)
+    #print("Starting filter_continous variables...", flush = True)
     #is there a way to write this line by line as a file, and do the .to_json in more memory efficient way on the command line or something? (probably)
-    continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods)) 
-    print("Done filtering continuous variables, saving to JSON..", flush = True)
+    #continuous_variables_final = pd.DataFrame(filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods)) 
+    #print("Done filtering continuous variables, saving to JSON..", flush = True)
 
     # filter_continuous_variables(trait_dict, variable_missing_codes, variable_names, contains_periods).to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
 
-    continuous_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
+    final_result = pd.DataFrame()
+
+    # Iterate in chunks.
+    # This consumes less memory and kicks back initial results sooner.
+    for chunk in chunked_iterable(range(1, range_size + 1), chunk_size):
+
+        with ThreadPoolExecutor(max_workers=chunk_size) as pool_executor:
+            pool = {}
+            for i in chunk:
+                function_call = pool_executor.submit(filter_continuous_variables, i, trait_dict, variable_missing_codes, variable_names, contains_periods)
+                pool[function_call] = i
+
+            for completed_function in as_completed(pool):
+                result = completed_function.result()
+                if (result != 1):
+                    final_result = pd.concat((final_result, pd.DataFrame(result)), axis = 1)
+                    i = pool[completed_function]
+
+                print('{} completed @ {}'.format(
+                    str(i + 1).zfill(4),
+                    strftime("%H:%M:%S", gmtime())), flush = True)
+                
+    print(f"==--- Script took {round(time() - startTime)} seconds. ---==", flush = True)
+
+    print(final_result.head(), flush = True)
+    final_result.to_csv(f'{args.out_prefix}.summary.csv' , header = True, index = False)
+    final_result.to_json(f'{args.out_prefix}.summary.json', orient='records', lines = True, mode = 'a')
     print("script done!")

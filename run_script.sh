@@ -1,10 +1,11 @@
 #!/bin/bash
 #SBATCH --account=def-gsarah
-#SBATCH --time=23:58:00
-#SBATCH --mem=20G
-#SBATCH --cpus-per-task=1
+#SBATCH --time=06:00:00
+#SBATCH --mem-per-cpu=10G
+#SBATCH --cpus-per-task=10
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 
-module load python/3.11.5
+module load StdEnv/2020 python/3.11.5
+#source myenv/bin/activate
 python3 tests.py

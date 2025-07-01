@@ -51,9 +51,12 @@ def filter_categorical_variables(df, variable_missing_codes):
         else:
             df_only_codes = np.unique(df_codes)
         df_only_codes = [x for x in df_only_codes if x == x]
-        if len(df_only_codes) > 2:
+        if len(df_only_codes) <= 2 or len(df_only_codes) > 20:
             continue
+        count = len(df[label][df[label].isin(df_only_codes)])
+        print(label, len(df_only_codes), count )
         yield label
+        
     return
 
 def populate_missing_codes(df):
@@ -320,28 +323,35 @@ if __name__ == '__main__':
     #read in phenotypes
     df_pheno = pd.read_csv(TOML['PHENOTYPE_FILE'], header = 0)
 
-    binary_variables = set(filter_binary_variables(df_pheno, variable_missing_codes)) 
+    #binary_variables = set(filter_binary_variables(df_pheno, variable_missing_codes)) 
     categorical_variables = set(filter_categorical_variables(df_pheno, variable_missing_codes))
-
-    df_variables = pd.read_excel(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_MAIN'], header = 0)
-
-    df_variables[COLS_MAIN['UNITTYPE']] = df_variables[COLS_MAIN['UNITTYPE']].fillna('')
-
-    #remove binary and categorical variables (keeping only quantitative variables)
-    df_variables = df_variables[~df_variables[COLS_MAIN['VARNAME']].isin(binary_variables)]
-    df_variables = df_variables[~df_variables[COLS_MAIN['VARNAME']].isin(categorical_variables)]
     
-    #create final dataframe to help populate.
-    df_pheno = pd.read_csv(TOML['PHENOTYPE_FILE'], header = 0)
-    df_pheno_final = pd.DataFrame({'FID': df_pheno[COLS_PHENO['IID']], 'IID': df_pheno[COLS_PHENO['IID']]})
-
-    #need to make this more memory efficient
+    # categorical_variables)
     
-    #populate variables for final dataframe.
-    print("Starting filter_continous variables...", flush = True)
-    df_variables_final = pd.DataFrame(filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, df_pheno_final))
+    with open('categorical_variables', 'w') as f:
+        for var in categorical_variables:
+            f.write(f"{var}\n")
+    
 
-    print("Done filtering continuous variables", flush = True)
-    df_variables_final.to_csv(f'{args.out_prefix}.summary.tsv', sep = '\t', header = True, index = False)
-    df_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records')
-    print("DONE!")
+    # df_variables = pd.read_excel(TOML['DICT_FILE'], sheet_name = TOML['SHEET_NAME_MAIN'], header = 0)
+
+    # df_variables[COLS_MAIN['UNITTYPE']] = df_variables[COLS_MAIN['UNITTYPE']].fillna('')
+
+    # #remove binary and categorical variables (keeping only quantitative variables)
+    # df_variables = df_variables[~df_variables[COLS_MAIN['VARNAME']].isin(binary_variables)]
+    # df_variables = df_variables[~df_variables[COLS_MAIN['VARNAME']].isin(categorical_variables)]
+    
+    # #create final dataframe to help populate.
+    # df_pheno = pd.read_csv(TOML['PHENOTYPE_FILE'], header = 0)
+    # df_pheno_final = pd.DataFrame({'FID': df_pheno[COLS_PHENO['IID']], 'IID': df_pheno[COLS_PHENO['IID']]})
+
+    # #need to make this more memory efficient
+    
+    # #populate variables for final dataframe.
+    # print("Starting filter_continous variables...", flush = True)
+    # df_variables_final = pd.DataFrame(filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, df_pheno_final))
+
+    # print("Done filtering continuous variables", flush = True)
+    # df_variables_final.to_csv(f'{args.out_prefix}.summary.tsv', sep = '\t', header = True, index = False)
+    # df_variables_final.to_json(f'{args.out_prefix}.summary.json', orient='records')
+    # print("DONE!")
